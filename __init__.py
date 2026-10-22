@@ -7,13 +7,13 @@ this file only wires them into Blender's operator/menu system.
 import bpy
 import json
 import time
-from bpy.props import StringProperty
+from bpy.props import StringProperty, BoolProperty
 from bpy_extras.io_utils import ExportHelper, ImportHelper
 
 bl_info = {
     "name": "OpenSKP Compare for NEOS",
     "author": "Ahsan Mehmood; local NEOS compatibility build",
-    "version": (0, 2, 7),
+    "version": (0, 2, 8),
     "blender": (4, 2, 0),
     "location": "File > Import/Export > SketchUp - OpenSKP Compare",
     "description": "Independent OpenSKP parser for comparison with NEOS SKP",
@@ -31,6 +31,8 @@ class IMPORT_OT_openskp_neos_compare(bpy.types.Operator, ImportHelper):
 
     filename_ext = ".skp"
     filter_glob: StringProperty(default="*.skp", options={"HIDDEN"})
+    show_textures: BoolProperty(name="Show imported textures", default=True,
+        description="Show source textures in Solid viewports, including NEOS Albedo")
 
     def execute(self, context):
         started = time.perf_counter()
@@ -38,6 +40,8 @@ class IMPORT_OT_openskp_neos_compare(bpy.types.Operator, ImportHelper):
             runtime.ensure_dependencies()
             from . import import_skp
             stats = import_skp.import_skp(self.filepath, context)
+            if self.show_textures:
+                import_skp.show_imported_textures(context)
         except Exception as exc:  # noqa: BLE001 - surfaced to the user, not swallowed
             self.report({"ERROR"}, f"OpenSKP import failed: {exc}")
             return {"CANCELLED"}

@@ -7,7 +7,7 @@ import shutil
 import zipfile
 
 ROOT = Path(__file__).resolve().parent
-OUTPUT = ROOT / "openskp-neos-compare-0.2.7-blender42-win64-legacy.zip"
+OUTPUT = ROOT / "openskp-neos-compare-0.2.8-blender42-win64-legacy.zip"
 WHEELS = [
     "openskp-1.3.0-py3-none-any.whl",
     "mapbox_earcut-2.1.0-cp311-cp311-win_amd64.whl",
@@ -35,11 +35,12 @@ def main():
         "upstream": "https://github.com/iamahsanmehmood/blender-openskp",
         "upstream_commit": subprocess.check_output(["git", "rev-parse", "refs/remotes/origin/main"], cwd=ROOT, text=True).strip(),
         "target": "Blender 4.2 Windows x64, CPython 3.11",
-        "version": "0.2.7-local-compare",
+        "version": "0.2.8-local-compare",
         "dependencies": [{"file": name, "sha256": hashlib.sha256((ROOT / "wheels" / name).read_bytes()).hexdigest()}
                          for name in WHEELS],
         "changes": ["Legacy packaging with offline dependencies", "Distinct comparison menu and operator identities",
-                    "Blender 4.2 transparency API", "Import time and counts recorded in Scene custom property"],
+                    "Blender 4.2 transparency API", "Import time and counts recorded in Scene custom property",
+                    "Active albedo image nodes for Workbench and NEOS; aligned mixed-primitive UVs; optional textured viewport after import"],
         "parser": "OpenSKP 1.3.0 with upstream and local legacy parser fixes; independent of NEOS SDK",
         "legacy_parser_base_commit": "525093be16d52f64e0f0ccb2e56cc91648eabeb9",
         "parser_overrides": patches,

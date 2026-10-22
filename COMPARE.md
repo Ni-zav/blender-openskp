@@ -8,6 +8,10 @@ Install the ZIP through Preferences > Add-ons > Install from Disk and enable
 OpenSKP Compare for NEOS. It can be enabled alongside NEOS.
 
 Use File > Import > SketchUp - OpenSKP Compare (.skp).
+Show imported textures is enabled by default: Solid viewports switch to flat
+texture color. Material Preview and Rendered shading are preserved. Image
+nodes are active for Blender Workbench and NEOS Albedo; images remain packed
+in the blend file. Turn off the checkbox to preserve Solid viewport settings.
 For NEOS, use its existing SKP import control. Use a fresh scene for each
 import with the same unit scale, file and viewpoint; do not overlay results.
 This build uses OpenSKP with documented legacy parser fixes and keeps its

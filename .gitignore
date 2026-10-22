@@ -6,3 +6,4 @@ __pycache__/
 /vendor/
 /*.zip.build.json
 /sample-validation/
+/texture-validation/

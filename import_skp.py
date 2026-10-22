@@ -208,6 +208,13 @@ def _get_or_build_material(material_index, gltf_materials, material_cache, textu
         tex_node = mat.node_tree.nodes.new("ShaderNodeTexImage")
         tex_node.image = image
         tex_node.location = (bsdf.location.x - 300, bsdf.location.y)
+        # Workbench / NEOS Albedo reads the active image node rather than
+        # evaluating the shader tree, even when Base Color is linked correctly.
+        mat.node_tree.nodes.active = tex_node
+        uv_node = mat.node_tree.nodes.new("ShaderNodeUVMap")
+        uv_node.uv_map = "UVMap"
+        uv_node.location = (tex_node.location.x - 200, tex_node.location.y)
+        mat.node_tree.links.new(uv_node.outputs['UV'], tex_node.inputs['Vector'])
         mat.node_tree.links.new(tex_node.outputs["Color"], bsdf.inputs["Base Color"])
         if "Alpha" in bsdf.inputs and image.depth in (32, 128):  # has its own alpha channel
             mat.node_tree.links.new(tex_node.outputs["Alpha"], bsdf.inputs["Alpha"])
@@ -258,8 +265,15 @@ def _build_mesh_object(name, resource, gltf_materials, material_cache, textures,
         uvs = prim.uvs
         for i in range(0, len(pos), 3):
             verts.append((pos[i], pos[i + 1], pos[i + 2]))
-        for i in range(0, len(uvs), 2):
-            vert_uvs.append((uvs[i], uvs[i + 1]))
+        vertex_count = len(pos) // 3
+        if len(uvs) not in (0, vertex_count * 2):
+            raise ValueError(f"Invalid UV count for {name}: {len(uvs)} values for {vertex_count} vertices")
+        if len(uvs):
+            vert_uvs.extend((uvs[i], uvs[i + 1]) for i in range(0, len(uvs), 2))
+        else:
+            # Untextured primitives still occupy vertices in this shared mesh.
+            # Omitting their UVs shifts every subsequent textured primitive.
+            vert_uvs.extend([(0.0, 0.0)] * vertex_count)
         idx = prim.indices
         tri_count = len(idx) // 3
         for i in range(tri_count):
@@ -278,6 +292,7 @@ def _build_mesh_object(name, resource, gltf_materials, material_cache, textures,
     # to verts above, in the same per-primitive order) to find its UV.
     if vert_uvs:
         uv_layer = mesh.uv_layers.new(name="UVMap")
+        uv_layer.active_render = True
         for loop in mesh.loops:
             uv_layer.data[loop.index].uv = vert_uvs[loop.vertex_index]
 
@@ -584,3 +599,24 @@ def import_skp(filepath, context=None):
         layer_coll.exclude = True
 
     return stats
+
+
+def show_imported_textures(context):
+    """Enable the active-image albedo view in Solid viewports after import.
+
+    Blender's actual Material Preview and Rendered modes already evaluate the
+    imported shader, so preserve those choices. No NEOS hooks or timers needed.
+    """
+    windows = getattr(getattr(context, 'window_manager', None), 'windows', ())
+    screens = {window.screen for window in windows if window.screen is not None}
+    if getattr(context, 'screen', None) is not None:
+        screens.add(context.screen)
+    for screen in screens:
+        for area in screen.areas:
+            if area.type != 'VIEW_3D':
+                continue
+            shading = area.spaces.active.shading
+            if shading.type == 'SOLID':
+                shading.color_type = 'TEXTURE'
+                shading.light = 'FLAT'
+            area.tag_redraw()
