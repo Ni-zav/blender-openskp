@@ -12,7 +12,8 @@ Show imported textures is enabled by default: Solid viewports switch to flat
 texture color. Material Preview and Rendered shading are preserved. Image
 nodes are active for Blender Workbench and NEOS Albedo; images remain packed
 in the blend file. Turn off the checkbox to preserve Solid viewport settings.
-For NEOS, use its existing SKP import control. Use a fresh scene for each
+To use OpenSKP inside NEOS mode, choose the same OpenSKP Compare menu.
+The NEOS SKP import control selects the separate NEOS engine for comparison. Use a fresh scene for each
 import with the same unit scale, file and viewpoint; do not overlay results.
 This build uses OpenSKP with documented legacy parser fixes and keeps its
 collection-instancing approach.
@@ -32,7 +33,7 @@ Empties are not exported; original hierarchy and texture export are limited.
 
 All changes are local. Nothing has been published to the upstream repository.
 
-## Local validation on Blender 4.2.7
+## Previous 0.2.7 validation on Blender 4.2.7
 
 - Actual legacy installation and simultaneous registration with NEOS passed.
 - Bld D.skp imported: 63 unique meshes, 257 mesh placements, 71,453 unique
@@ -41,3 +42,7 @@ All changes are local. Nothing has been published to the upstream repository.
 - Legacy parser fixes cover custom line styles, custom-layer bootstrap,
   old Image records without GUIDs, and full image placement matrices.
 - These are import checks in background Blender, not visual fidelity approval.
+
+Version 0.2.9 bakes the source paint tint into packed image variants for matching shader and Workbench display, preserves inherited group/component textures and separates front/back paint without the unpainted side covering the textured side. Solid texture view enables backface culling for those paired faces.
+
+Shared paint on both sides is represented explicitly for Solid backface culling.

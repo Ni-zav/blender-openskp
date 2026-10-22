@@ -170,6 +170,25 @@ def _get_or_build_texture_image(texture_index, textures, image_cache):
     return image
 
 
+def _tinted_texture(image, color, image_cache):
+    """Bake the glTF color factor so Workbench and shader previews agree."""
+    if all(abs(value - 1.0) < 1e-6 for value in color):
+        return image
+    key = (image.as_pointer(), tuple(color))
+    if key not in image_cache:
+        import numpy as np
+        pixels = np.empty(len(image.pixels), dtype=np.float32)
+        image.pixels.foreach_get(pixels)
+        pixels.reshape((-1, 4))[:, :3] *= np.asarray(color, dtype=np.float32)
+        tinted = image.copy()
+        tinted.name = image.name + " (paint tint)"
+        tinted.pixels.foreach_set(pixels)
+        tinted.update()
+        tinted.pack()
+        image_cache[key] = tinted
+    return image_cache[key]
+
+
 def _get_or_build_material(material_index, gltf_materials, material_cache, textures, image_cache):
     """Returns the Blender Material for gltf_materials[material_index],
     building it exactly once per unique index and caching it for every
@@ -205,6 +224,7 @@ def _get_or_build_material(material_index, gltf_materials, material_cache, textu
         image = _get_or_build_texture_image(texture_ref.get("index"), textures, image_cache)
 
     if image is not None:
+        image = _tinted_texture(image, (r, g, b), image_cache)
         tex_node = mat.node_tree.nodes.new("ShaderNodeTexImage")
         tex_node.image = image
         tex_node.location = (bsdf.location.x - 300, bsdf.location.y)
@@ -226,8 +246,9 @@ def _get_or_build_material(material_index, gltf_materials, material_cache, textu
         if "Alpha" in bsdf.inputs:
             bsdf.inputs["Alpha"].default_value = a
 
-    if gltf_mat.get("doubleSided"):
-        mat.use_backface_culling = False
+    # Separate front/back primitives are coincident: cull the opposite side
+    # or an unpainted back can overwrite the textured front.
+    mat.use_backface_culling = True
 
     material_cache[material_index] = mat
     return mat
@@ -279,6 +300,11 @@ def _build_mesh_object(name, resource, gltf_materials, material_cache, textures,
         for i in range(tri_count):
             tris.append((base + idx[i * 3], base + idx[i * 3 + 1], base + idx[i * 3 + 2]))
             tri_material_indices.append(slot)
+            if gltf_materials[prim.material_index].get("doubleSided"):
+                # Workbench culls globally, so represent a shared paint on both
+                # sides explicitly as well as the parser's distinct side pairs.
+                tris.append((base + idx[i * 3], base + idx[i * 3 + 2], base + idx[i * 3 + 1]))
+                tri_material_indices.append(slot)
 
     mesh = bpy.data.meshes.new(name)
     mesh.from_pydata(verts, [], tris)
@@ -569,7 +595,8 @@ def import_skp(filepath, context=None):
         image_cache,
         stats,
     )
-    stats["textures_loaded"] = len(image_cache)
+    stats["textures_loaded"] = sum(isinstance(key, int) for key in image_cache)
+    stats["texture_tint_variants"] = sum(isinstance(key, tuple) for key in image_cache)
     print(
         f"openskp: {stats['unique_meshes']} unique meshes "
         f"({stats['triangles']} triangles), {stats['placements']} instances placed; "
@@ -619,4 +646,5 @@ def show_imported_textures(context):
             if shading.type == 'SOLID':
                 shading.color_type = 'TEXTURE'
                 shading.light = 'FLAT'
+                shading.show_backface_culling = True
             area.tag_redraw()
