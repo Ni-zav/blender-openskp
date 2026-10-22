@@ -10,7 +10,8 @@ OpenSKP Compare for NEOS. It can be enabled alongside NEOS.
 Use File > Import > SketchUp - OpenSKP Compare (.skp).
 For NEOS, use its existing SKP import control. Use a fresh scene for each
 import with the same unit scale, file and viewpoint; do not overlay results.
-This build leaves OpenSKP's parser and collection-instancing approach intact.
+This build uses OpenSKP with documented legacy parser fixes and keeps its
+collection-instancing approach.
 It does not convert the imported content into NEOS canonical modelling data.
 
 OpenSKP keeps shared master meshes under <filename> (source geometry).
@@ -32,6 +33,7 @@ All changes are local. Nothing has been published to the upstream repository.
 - Actual legacy installation and simultaneous registration with NEOS passed.
 - Bld D.skp imported: 63 unique meshes, 257 mesh placements, 71,453 unique
   triangles, 13 loose-edge resources, 23 wire placements and 7 textures.
-- minmalist house.skp is unsupported by the bundled upstream OpenSKP 1.3.0
-  parser: no reader for CCustomLineStyle (legacy_walk). NEOS can read this file.
+- All nine files in dxfdwgskp_sample have passing OpenSKP import evidence.
+- Legacy parser fixes cover custom line styles, custom-layer bootstrap,
+  old Image records without GUIDs, and full image placement matrices.
 - These are import checks in background Blender, not visual fidelity approval.

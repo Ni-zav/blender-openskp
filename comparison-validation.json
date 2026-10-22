@@ -11,14 +11,24 @@
     "textures_loaded": 7,
     "unique_layers": 1,
     "hidden_layers": 0,
-    "elapsed_seconds": 3.23,
+    "elapsed_seconds": 3.563,
     "source_file": "C:\\Users\\awak\\Documents\\ND\\dxfdwgskp_sample\\Bld D.skp",
-    "engine": "OpenSKP 1.3.0"
+    "engine": "OpenSKP 1.3.0 + local legacy parser fixes"
   },
   {
     "file": "minmalist house.skp",
-    "status": "failed",
-    "error": "Error: OpenSKP import failed: legacy .skp parse failed: no reader for class CCustomLineStyle @0x13b4e3: \u202643 43 75 73 74 6f 6d 4c 69 6e 65 53 74 79 6c 65 | 00 00 00 00 00 00 ff fe ff 0b 53 00 6f 00 6c 00 69 00 64 00 20 00 42 00 61 00 73 00 69 00 63 00\u2026 | stage=legacy_walk\n",
-    "seconds": 0.003830499999821768
+    "status": "passed",
+    "unique_meshes": 40,
+    "placements": 133,
+    "triangles": 4839,
+    "unique_curve_meshes": 21,
+    "curve_placements": 58,
+    "curve_runs": 2588,
+    "textures_loaded": 12,
+    "unique_layers": 1,
+    "hidden_layers": 0,
+    "elapsed_seconds": 0.86,
+    "source_file": "C:\\Users\\awak\\Documents\\ND\\dxfdwgskp_sample\\minmalist house.skp",
+    "engine": "OpenSKP 1.3.0 + local legacy parser fixes"
   }
 ]

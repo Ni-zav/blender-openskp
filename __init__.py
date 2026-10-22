@@ -13,7 +13,7 @@ from bpy_extras.io_utils import ExportHelper, ImportHelper
 bl_info = {
     "name": "OpenSKP Compare for NEOS",
     "author": "Ahsan Mehmood; local NEOS compatibility build",
-    "version": (0, 2, 6),
+    "version": (0, 2, 7),
     "blender": (4, 2, 0),
     "location": "File > Import/Export > SketchUp - OpenSKP Compare",
     "description": "Independent OpenSKP parser for comparison with NEOS SKP",
@@ -43,7 +43,7 @@ class IMPORT_OT_openskp_neos_compare(bpy.types.Operator, ImportHelper):
             return {"CANCELLED"}
 
         stats.update(elapsed_seconds=round(time.perf_counter() - started, 3),
-                     source_file=self.filepath, engine="OpenSKP 1.3.0")
+                     source_file=self.filepath, engine="OpenSKP 1.3.0 + local legacy parser fixes")
         context.scene["openskp_compare_last_import"] = json.dumps(stats)
         print("[OpenSKP Compare] " + json.dumps(stats), flush=True)
         self.report(

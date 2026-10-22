@@ -11,7 +11,7 @@ import addon_utils
 import bpy
 
 ROOT = Path(__file__).resolve().parents[1]
-archive = ROOT / 'openskp-neos-compare-0.2.6-blender42-win64-legacy.zip'
+archive = ROOT / 'openskp-neos-compare-0.2.7-blender42-win64-legacy.zip'
 samples = Path(r'C:\Users\awak\Documents\ND\dxfdwgskp_sample')
 bpy.ops.preferences.addon_install(filepath=str(archive), overwrite=False)
 addon_utils.modules_refresh()
@@ -61,5 +61,5 @@ finally:
 
 (ROOT / 'comparison-validation.json').write_text(json.dumps(results, indent=2) + '\n', encoding='utf-8')
 assert results[0]['status'] == 'passed', results
-assert results[1]['status'] == 'failed' and 'CCustomLineStyle' in results[1]['error'], results
+assert results[1]['status'] == 'passed', results
 print('OPEN_SKP_NEOS_COEXISTENCE_OK')
