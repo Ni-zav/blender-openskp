@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 .screenshots/
 *.zip
+# Local Windows legacy build dependencies and evidence.
+/vendor/
+/*.zip.build.json

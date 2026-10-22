@@ -1,8 +1,8 @@
 schema_version = "1.0.0"
 
-id = "openskp_import_export"
-version = "0.2.5"
-name = "OpenSKP Import/Export"
+id = "openskp_neos_compare"
+version = "0.2.6"
+name = "OpenSKP Compare for NEOS"
 tagline = "Native SketchUp (.skp) import and export, no SketchUp required"
 maintainer = "Ahsan Mehmood <mail.ahsanmehmood@gmail.com>"
 type = "add-on"

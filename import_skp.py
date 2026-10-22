@@ -197,7 +197,7 @@ def _get_or_build_material(material_index, gltf_materials, material_cache, textu
     mat.use_nodes = True
     mat.diffuse_color = (r, g, b, a)  # Solid viewport shading / thumbnails
     if a < 1.0:
-        mat.blend_method = "BLEND"
+        mat.surface_render_method = "DITHERED"
 
     bsdf = mat.node_tree.nodes.get("Principled BSDF")
     image = None
@@ -211,7 +211,7 @@ def _get_or_build_material(material_index, gltf_materials, material_cache, textu
         mat.node_tree.links.new(tex_node.outputs["Color"], bsdf.inputs["Base Color"])
         if "Alpha" in bsdf.inputs and image.depth in (32, 128):  # has its own alpha channel
             mat.node_tree.links.new(tex_node.outputs["Alpha"], bsdf.inputs["Alpha"])
-            mat.blend_method = "BLEND"
+            mat.surface_render_method = "DITHERED"
     elif bsdf is not None:
         # Blender 4.x renamed the alpha-adjacent socket; "Base Color" is
         # stable across the versions this addon targets (4.2+).

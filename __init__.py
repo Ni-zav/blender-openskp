@@ -5,13 +5,27 @@ Registers File > Import > SketchUp (.skp) and File > Export > SketchUp
 this file only wires them into Blender's operator/menu system.
 """
 import bpy
+import json
+import time
 from bpy.props import StringProperty
 from bpy_extras.io_utils import ExportHelper, ImportHelper
 
+bl_info = {
+    "name": "OpenSKP Compare for NEOS",
+    "author": "Ahsan Mehmood; local NEOS compatibility build",
+    "version": (0, 2, 6),
+    "blender": (4, 2, 0),
+    "location": "File > Import/Export > SketchUp - OpenSKP Compare",
+    "description": "Independent OpenSKP parser for comparison with NEOS SKP",
+    "category": "Import-Export",
+}
 
-class IMPORT_OT_openskp(bpy.types.Operator, ImportHelper):
-    bl_idname = "import_scene.openskp"
-    bl_label = "Import SketchUp (.skp)"
+from . import runtime
+
+
+class IMPORT_OT_openskp_neos_compare(bpy.types.Operator, ImportHelper):
+    bl_idname = "import_scene.openskp_neos_compare"
+    bl_label = "Import SketchUp - OpenSKP Compare"
     bl_description = "Import a native SketchUp .skp file"
     bl_options = {"REGISTER", "UNDO"}
 
@@ -19,14 +33,19 @@ class IMPORT_OT_openskp(bpy.types.Operator, ImportHelper):
     filter_glob: StringProperty(default="*.skp", options={"HIDDEN"})
 
     def execute(self, context):
-        from . import import_skp
-
+        started = time.perf_counter()
         try:
+            runtime.ensure_dependencies()
+            from . import import_skp
             stats = import_skp.import_skp(self.filepath, context)
         except Exception as exc:  # noqa: BLE001 - surfaced to the user, not swallowed
             self.report({"ERROR"}, f"OpenSKP import failed: {exc}")
             return {"CANCELLED"}
 
+        stats.update(elapsed_seconds=round(time.perf_counter() - started, 3),
+                     source_file=self.filepath, engine="OpenSKP 1.3.0")
+        context.scene["openskp_compare_last_import"] = json.dumps(stats)
+        print("[OpenSKP Compare] " + json.dumps(stats), flush=True)
         self.report(
             {"INFO"},
             f"Imported {stats['unique_meshes']} unique meshes "
@@ -37,9 +56,9 @@ class IMPORT_OT_openskp(bpy.types.Operator, ImportHelper):
         return {"FINISHED"}
 
 
-class EXPORT_OT_openskp(bpy.types.Operator, ExportHelper):
-    bl_idname = "export_scene.openskp"
-    bl_label = "Export SketchUp (.skp)"
+class EXPORT_OT_openskp_neos_compare(bpy.types.Operator, ExportHelper):
+    bl_idname = "export_scene.openskp_neos_compare"
+    bl_label = "Export SketchUp - OpenSKP Compare"
     bl_description = "Export selected objects to a native SketchUp .skp file"
     bl_options = {"REGISTER"}
 
@@ -47,9 +66,9 @@ class EXPORT_OT_openskp(bpy.types.Operator, ExportHelper):
     filter_glob: StringProperty(default="*.skp", options={"HIDDEN"})
 
     def execute(self, context):
-        from . import export_skp
-
         try:
+            runtime.ensure_dependencies()
+            from . import export_skp
             stats = export_skp.export_skp(self.filepath, context)
         except Exception as exc:  # noqa: BLE001
             self.report({"ERROR"}, f"OpenSKP export failed: {exc}")
@@ -64,17 +83,18 @@ class EXPORT_OT_openskp(bpy.types.Operator, ExportHelper):
 
 
 def _menu_func_import(self, context):
-    self.layout.operator(IMPORT_OT_openskp.bl_idname, text="SketchUp (.skp)")
+    self.layout.operator(IMPORT_OT_openskp_neos_compare.bl_idname, text="SketchUp - OpenSKP Compare (.skp)")
 
 
 def _menu_func_export(self, context):
-    self.layout.operator(EXPORT_OT_openskp.bl_idname, text="SketchUp (.skp)")
+    self.layout.operator(EXPORT_OT_openskp_neos_compare.bl_idname, text="SketchUp - OpenSKP Compare (.skp)")
 
 
-_classes = (IMPORT_OT_openskp, EXPORT_OT_openskp)
+_classes = (IMPORT_OT_openskp_neos_compare, EXPORT_OT_openskp_neos_compare)
 
 
 def register():
+    runtime.ensure_dependencies()
     for cls in _classes:
         bpy.utils.register_class(cls)
     bpy.types.TOPBAR_MT_file_import.append(_menu_func_import)
