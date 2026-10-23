@@ -7,7 +7,7 @@ import shutil
 import zipfile
 
 ROOT = Path(__file__).resolve().parent
-OUTPUT = ROOT / "openskp-neos-compare-0.2.11-blender42-win64-legacy.zip"
+OUTPUT = ROOT / "openskp-neos-compare-0.2.12-blender42-win64-legacy.zip"
 WHEELS = [
     "openskp-1.3.0-py3-none-any.whl",
     "mapbox_earcut-2.1.0-cp311-cp311-win_amd64.whl",
@@ -35,10 +35,10 @@ def main():
         "upstream": "https://github.com/iamahsanmehmood/blender-openskp",
         "upstream_commit": subprocess.check_output(["git", "rev-parse", "refs/remotes/origin/main"], cwd=ROOT, text=True).strip(),
         "target": "Blender 4.2 Windows x64, CPython 3.11",
-        "version": "0.2.11-local-compare",
+        "version": "0.2.12-local-compare",
         "dependencies": [{"file": name, "sha256": hashlib.sha256((ROOT / "wheels" / name).read_bytes()).hexdigest()}
                          for name in WHEELS],
-        "changes": ["Editable Mesh placements with shared component data and tag-only collections",
+        "changes": ["Optional native saved-scene cameras and camera-only import", "Editable Mesh placements with shared component data and tag-only collections",
                     "Editable mapping and material adjustment nodes with alpha and neutral bump controls",
                     "Legacy packaging with offline dependencies", "Distinct comparison menu and operator identities",
                     "Blender 4.2 transparency API", "Import time and counts recorded in Scene custom property",
@@ -48,7 +48,7 @@ def main():
         "parser_overrides": patches,
     }
     with zipfile.ZipFile(OUTPUT, "w", zipfile.ZIP_DEFLATED) as archive:
-        for name in ["__init__.py", "import_skp.py", "material_nodes.py", "paint_color.py", "export_skp.py", "runtime.py", "LICENSE", "LICENSE-OpenSKP", "COMPARE.md"]:
+        for name in ["__init__.py", "import_skp.py", "material_nodes.py", "paint_color.py", "scene_cameras.py", "export_skp.py", "runtime.py", "LICENSE", "LICENSE-OpenSKP", "COMPARE.md"]:
             archive.write(ROOT / name, prefix + name)
         archive.writestr(prefix + "build-info.json", json.dumps(provenance, indent=2) + "\n")
         for path in sorted(vendor.rglob("*")):

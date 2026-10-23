@@ -13,7 +13,7 @@ from bpy_extras.io_utils import ExportHelper, ImportHelper
 bl_info = {
     "name": "OpenSKP Compare for NEOS",
     "author": "Ahsan Mehmood; local NEOS compatibility build",
-    "version": (0, 2, 11),
+    "version": (0, 2, 12),
     "blender": (4, 2, 0),
     "location": "File > Import/Export > SketchUp - OpenSKP Compare",
     "description": "Independent OpenSKP parser for comparison with NEOS SKP",
@@ -34,13 +34,27 @@ class IMPORT_OT_openskp_neos_compare(bpy.types.Operator, ImportHelper):
     show_textures: BoolProperty(name="Show imported textures", default=True,
         description="Show source textures in Solid viewports, including NEOS Albedo")
 
+    import_scene_cameras: BoolProperty(name="Import Scenes As Cameras", default=False,
+        description="Create Blender cameras from saved SketchUp scenes/pages")
+    import_scene_camera_only: BoolProperty(name="Import Scene Cameras Only", default=False,
+        description="Import saved scene cameras without building geometry or materials")
+
+    def draw(self, context):
+        self.layout.prop(self, "show_textures")
+        self.layout.prop(self, "import_scene_cameras")
+        column = self.layout.column()
+        column.active = self.import_scene_cameras
+        column.prop(self, "import_scene_camera_only")
+
     def execute(self, context):
         started = time.perf_counter()
         try:
             runtime.ensure_dependencies()
             from . import import_skp
-            stats = import_skp.import_skp(self.filepath, context)
-            if self.show_textures:
+            stats = import_skp.import_skp(self.filepath, context,
+                import_scene_cameras=self.import_scene_cameras,
+                import_scene_camera_only=self.import_scene_camera_only)
+            if self.show_textures and not (self.import_scene_cameras and self.import_scene_camera_only):
                 import_skp.show_imported_textures(context)
         except Exception as exc:  # noqa: BLE001 - surfaced to the user, not swallowed
             self.report({"ERROR"}, f"OpenSKP import failed: {exc}")
@@ -55,7 +69,7 @@ class IMPORT_OT_openskp_neos_compare(bpy.types.Operator, ImportHelper):
             f"Imported {stats['unique_meshes']} unique meshes "
             f"({stats['placements']} placed), "
             f"{stats['unique_curve_meshes']} loose-edge groups "
-            f"({stats['curve_placements']} placed)",
+            f"({stats['curve_placements']} placed), {stats.get('scene_cameras', 0)} scene cameras",
         )
         return {"FINISHED"}
 

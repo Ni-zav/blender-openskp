@@ -323,7 +323,7 @@ def _placed_layers(node):
     return layers
 
 
-def import_skp(filepath, context=None):
+def import_skp(filepath, context=None, *, import_scene_cameras=False, import_scene_camera_only=False):
     """Imports a .skp file into the current (or given) Blender context's
     scene, returning a stats dict."""
     import openskp
@@ -333,7 +333,18 @@ def import_skp(filepath, context=None):
     print(f"openskp: parsing {os.path.basename(filepath)}...")
     t0 = time.time()
     skp = openskp.SkpFile.open(filepath)
-    scene = skp.build_instanced_scene()
+    from openskp import _core, instanced_scene
+    parsed = _core.full_parse(filepath)
+    camera_only = import_scene_cameras and import_scene_camera_only
+    if camera_only:
+        root = bpy.data.collections.new(os.path.splitext(os.path.basename(filepath))[0])
+        context.scene.collection.children.link(root)
+        from .scene_cameras import import_cameras
+        count = import_cameras(filepath, parsed, context, root)
+        return dict(unique_meshes=0, placements=0, triangles=0, unique_curve_meshes=0,
+                    curve_placements=0, curve_runs=0, mesh_objects=0, textures_loaded=0,
+                    texture_tint_variants=0, collections=1+len(root.children), scene_cameras=count)
+    scene = instanced_scene.build_instanced_scene(parsed)
     print(f"openskp: parsed in {time.time() - t0:.1f}s, building objects...")
 
     resources_by_id = {r.id: r for r in scene.mesh_resources}
@@ -412,6 +423,11 @@ def import_skp(filepath, context=None):
                 break
     stats["mesh_objects"] = len(root_collection.all_objects)
     stats["collections"] = 1 + len(root_collection.children)
+    stats['scene_cameras'] = 0
+    if import_scene_cameras:
+        from .scene_cameras import import_cameras
+        stats['scene_cameras'] = import_cameras(filepath, parsed, context, root_collection)
+        stats['collections'] = 1 + len(root_collection.children)
     return stats
 
 

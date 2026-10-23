@@ -1,4 +1,4 @@
-﻿# OpenSKP Compare for NEOS
+ï»¿# OpenSKP Compare for NEOS
 
 Local legacy build for Blender 4.2 on Windows x64 (Python 3.11).
 Based on Ahsan Mehmood's GPL-3.0-or-later blender-openskp.
@@ -83,3 +83,22 @@ texture exports, verifies Edit Mode and unchanged world bounds, checks two-sided
 UVs, exercises shader brightness, and imports outside/inside NEOS mode. This
 improves the sampled file; it does not promise pixel-identical results under
 other lighting/color management or validate all sample files.
+
+## Saved scene cameras in 0.2.12
+
+Import Scenes As Cameras creates named Blender camera objects from captured
+SketchUp page views, selects the first imported camera as the scene camera,
+and preserves perspective/orthographic projection. Import Scene Cameras Only
+skips geometry/material construction when the first option is enabled.
+Both options default to off, matching NEOS. Parsing is still required in
+camera-only mode; its timing is not a geometry import measurement.
+
+Camera decoding is independent of NEOS/SketchUp SDK at runtime. Modern pages
+use the OpenSKP page records; classic pages use locally validated MFC camera
+records. This imports views, not SketchUp styles, animation, tag-visibility
+transitions or Scene tabs as separate Blender scenes. Aspect/FOV conversion
+uses the default vertical FOV / 16:9 when the parser has no aspect metadata;
+2-point perspective shifts and arbitrary legacy camera back-references are not
+guaranteed. SDK comparison is a development test oracle, not a runtime fallback.
+Camera-only acceptance checks 19 classic Cam81 views, zero tower views and nine
+modern FINALMASJID views against SDK names, matrices and camera settings.
