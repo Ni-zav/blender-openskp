@@ -197,6 +197,7 @@ def _add_face_side(
     group = face_groups.get(key)
     if group is None:
         group = {
+            "material_name": mat.get("name") if mat else None,
             "color": color,
             "transparency": transparency,
             "double_sided": double_sided,

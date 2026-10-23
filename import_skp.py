@@ -1,94 +1,8 @@
-"""Blender importer for native SketchUp (.skp) files, built on OpenSKP.
+"""Import OpenSKP resources as editable Blender mesh objects.
 
-Uses openskp's ``build_instanced_scene()`` rather than its flattened
-``build_scene()`` - the former keeps each unique component/group
-DEFINITION's geometry as one local-space mesh plus a separate list of
-placements, instead of baking every placement into its own copy of the
-vertex data. That maps directly onto Blender's own collection-instancing
-model: one Collection per unique definition, referenced by an Empty
-(``instance_type='COLLECTION'``) per placement. A component placed 1,000
-times costs one mesh, not 1,000 - unlike a flat triangle-soup import,
-editing the source mesh updates every placement at once, matching how
-SketchUp's own components behave.
-
-Coordinates: openskp's InstancedScene is already metres, glTF Y-up
-(positions/normals) with a 16-element column-major matrix per node -
-Blender is also metres but Z-up, so every matrix gets one fixed
-axis-conversion matrix multiplied in (see _YUP_TO_ZUP below), applied once
-per node rather than per vertex.
-
-Loose edges (construction lines/structural framing - a light-gauge-steel
-member is routinely drawn this way, not as a solid) come from the SAME
-instanced scene via ``InstancedScene.curve_resources``, imported as
-separate edges-only Mesh Objects (no faces, so Blender renders them as
-plain lines) placed the same way and cached the same way as the mesh
-resources above - a definition can have both a mesh_resource_id and a
-curve_resource_id at once. Found missing by testing this importer against
-a real structural-framing file (93 of 145 definitions were entirely or
-partly loose-edge, silently invisible before openskp gained
-InstancedCurveResource support).
-
-Editing the source geometry: every unique definition's master mesh/curve
-object lives in its own Collection, all gathered under one
-"<filename> (source geometry)" Collection which is excluded from the View
-Layer (Collection.children + a LayerCollection.exclude = True, found via
-_find_layer_collection) - kept out of the viewport/render at its
-local-space origin, where it would otherwise show up duplicated on top of
-the real, placed instances, while staying visible and selectable in the
-Outliner. This is the same pattern Blender's own manual recommends for a
-source/library collection feeding instances. To edit one: find it under
-that collection in the Outliner, enable its checkbox (un-excluding it),
-select the object, Tab into Edit Mode as normal - the edit affects every
-placement at once, matching how SketchUp's own components behave.
-Selecting a visible placement Empty and pressing Tab does nothing on its
-own (an Empty has no mesh data of its own to edit) - this is what a real
-user reported as "cannot access Edit Mode" (github#3), traced to there
-being no way to even select the right object in the first place (the
-source collections were entirely unlinked before this), not a limitation
-of Edit Mode itself.
-
-Layers (SketchUp calls them "tags"): every placement Empty is linked into
-a Collection named for its own resolved InstancedNode.layer, one per
-distinct layer in the file, all direct children of the root Collection
-(separate from sources_collection above - a layer is a property of a
-PLACEMENT, not of the definition it references, since the same
-definition can appear on different layers in different places, so
-per-layer grouping only makes sense at the placement level). A layer
-hidden in the source file (openskp's InstancedScene.layer_hidden, keyed
-by layer name) hides its Collection the same way - Collection.
-hide_viewport/hide_render, the ordinary Outliner eye/camera toggles - not
-the exclude-from-View-Layer mechanism sources_collection uses, since a
-hidden layer is still meant to be a normal, working part of the scene,
-just not shown right now.
-
-Materials: each mesh resource's per-triangle material_index (resolved by
-openskp's build_instanced_scene() into InstancedScene.gltf_materials, a
-glTF-style pbrMetallicRoughness list - the same resolution already used
-for openskp's other glTF-shaped exports, just never consumed by this
-addon before now) becomes a real Blender Material per unique color/alpha
-combination (Principled BSDF Base Color + Alpha, cached in
-material_cache so repeated colors across definitions share one Material
-datablock), assigned as a mesh material slot with per-polygon
-material_index set to match - so a component with several differently
-colored faces keeps that per-face variation in Blender, not one flat
-color for the whole object. Import only for now; export does not write
-materials back out.
-
-Textured materials: each mesh's own UV coordinates (LocalPrimitive.uvs -
-already resolved by openskp per vertex, just never read by this addon
-before now) are written into a real UV layer, and a material whose
-gltf_materials entry carries a pbrMetallicRoughness.baseColorTexture
-gets a real Image Texture node wired into Base Color (and Alpha, for an
-image with its own alpha channel), built from InstancedScene.textures'
-raw image bytes (PNG/JPEG only - the same restriction glTF itself has)
-via a temp file + Image.pack() (embeds the bytes into the .blend itself,
-so the temp file isn't left as a dangling external reference) - cached
-by texture index in image_cache so the same source image shared by
-several materials/objects loads exactly once. A textured material's
-resolved solid baseColorFactor (SketchUp's own paint-bucket average
-color) is still what Solid-shading and material_cache dedup key off of;
-only the shader's actual Base Color input differs when a texture image
-is available.
+One mesh datablock is shared by placements of the same component/paint variant.
+Each placement is a real selectable Mesh, with its own composed world transform.
+Collections represent source tags only; there are no hidden source collections.
 """
 from __future__ import annotations
 
@@ -212,42 +126,21 @@ def _get_or_build_material(material_index, gltf_materials, material_cache, textu
     r, g, b, a = pbr.get("baseColorFactor", [0.8, 0.8, 0.8, 1.0])
     texture_ref = pbr.get("baseColorTexture")
 
-    mat = bpy.data.materials.new(name=f"openskp_material_{material_index}")
+    mat = bpy.data.materials.new(name=gltf_mat.get("name") or f"OpenSKP Material {material_index + 1}")
     mat.use_nodes = True
     mat.diffuse_color = (r, g, b, a)  # Solid viewport shading / thumbnails
     if a < 1.0:
         mat.surface_render_method = "DITHERED"
 
-    bsdf = mat.node_tree.nodes.get("Principled BSDF")
     image = None
-    if texture_ref is not None and bsdf is not None:
+    if texture_ref is not None:
         image = _get_or_build_texture_image(texture_ref.get("index"), textures, image_cache)
-
-    if image is not None:
-        image = _tinted_texture(image, (r, g, b), image_cache)
-        tex_node = mat.node_tree.nodes.new("ShaderNodeTexImage")
-        tex_node.image = image
-        tex_node.location = (bsdf.location.x - 300, bsdf.location.y)
-        # Workbench / NEOS Albedo reads the active image node rather than
-        # evaluating the shader tree, even when Base Color is linked correctly.
-        mat.node_tree.nodes.active = tex_node
-        uv_node = mat.node_tree.nodes.new("ShaderNodeUVMap")
-        uv_node.uv_map = "UVMap"
-        uv_node.location = (tex_node.location.x - 200, tex_node.location.y)
-        mat.node_tree.links.new(uv_node.outputs['UV'], tex_node.inputs['Vector'])
-        mat.node_tree.links.new(tex_node.outputs["Color"], bsdf.inputs["Base Color"])
-        if "Alpha" in bsdf.inputs and image.depth in (32, 128):  # has its own alpha channel
-            mat.node_tree.links.new(tex_node.outputs["Alpha"], bsdf.inputs["Alpha"])
-            mat.surface_render_method = "DITHERED"
-    elif bsdf is not None:
-        # Blender 4.x renamed the alpha-adjacent socket; "Base Color" is
-        # stable across the versions this addon targets (4.2+).
-        bsdf.inputs["Base Color"].default_value = (r, g, b, 1.0)
-        if "Alpha" in bsdf.inputs:
-            bsdf.inputs["Alpha"].default_value = a
-
-    # Separate front/back primitives are coincident: cull the opposite side
-    # or an unpainted back can overwrite the textured front.
+        if image is not None:
+            image = _tinted_texture(image, (r, g, b), image_cache)
+    from .material_nodes import build_material_nodes
+    build_material_nodes(mat, image=image, color=(r, g, b, a),
+                         roughness=pbr.get("roughnessFactor", .8),
+                         metallic=pbr.get("metallicFactor", 0.0))
     mat.use_backface_culling = True
 
     material_cache[material_index] = mat
@@ -344,43 +237,16 @@ def _get_or_build_layer_collection(layer_name, layer_collection_cache, root_coll
     return coll
 
 
-def _get_or_build_collection(
-    resource_id, resources_by_id, collection_cache, sources_collection, gltf_materials, material_cache,
-    textures, image_cache, stats,
-):
-    """Returns the Collection holding resource_id's mesh object, building
-    it exactly once per unique id and caching it for every later
-    placement - the whole point of using build_instanced_scene() over
-    build_scene().
-
-    Linked as a child of sources_collection - which import_skp() excludes
-    from the View Layer - rather than left unlinked. An unlinked
-    Collection is invisible to Blender's own Outliner in its default View
-    Layer display mode, so the master mesh object (the only thing with
-    real, editable geometry - every visible placement is a Collection-
-    Instance Empty, which has none) was undiscoverable through the normal
-    workflow entirely: found reported as "selecting an object doesn't
-    allow Edit Mode" (github#3), traced to there being no way to even
-    select the right object in the first place, not a limitation of Edit
-    Mode itself. Excluding rather than fully linking keeps the source
-    geometry out of the viewport/render at its local-space origin (where
-    it would otherwise show up duplicated), while keeping it selectable
-    in the Outliner - the same pattern Blender's own manual recommends
-    for library/source collections feeding instances."""
-    if resource_id in collection_cache:
-        return collection_cache[resource_id]
-
-    resource = resources_by_id[resource_id]
-    coll = bpy.data.collections.new(resource.definition_name or resource_id)
-    obj = _build_mesh_object(
-        resource.definition_name or resource_id, resource, gltf_materials, material_cache, textures, image_cache
-    )
-    coll.objects.link(obj)
-    sources_collection.children.link(coll)
-    collection_cache[resource_id] = coll
-    stats["unique_meshes"] += 1
-    stats["triangles"] += sum(len(p.indices) // 3 for p in resource.primitives)
-    return coll
+def _get_mesh_object(resource_id, resources, cache, materials, material_cache,
+                     textures, image_cache, stats, *, name):
+    if resource_id not in cache:
+        resource = resources[resource_id]
+        obj = _build_mesh_object(name, resource, materials, material_cache, textures, image_cache)
+        cache[resource_id] = obj.data
+        stats["unique_meshes"] += 1
+        stats["triangles"] += sum(len(prim.indices) // 3 for prim in resource.primitives)
+        return obj
+    return bpy.data.objects.new(name, cache[resource_id])
 
 
 def _build_curve_object(name, resource):
@@ -415,120 +281,44 @@ def _build_curve_object(name, resource):
     return obj
 
 
-def _get_or_build_curve_collection(
-    resource_id, curve_resources_by_id, curve_collection_cache, sources_collection, stats
-):
-    """Returns the Collection holding resource_id's loose-edge object,
-    building it exactly once per unique id - same caching strategy as
-    _get_or_build_collection (including linking into sources_collection
-    for the same Outliner-discoverability reason), independent cache/id
-    space since a node can carry a mesh_resource_id, a curve_resource_id,
-    or both (a definition can have faces AND loose edges at once)."""
-    if resource_id in curve_collection_cache:
-        return curve_collection_cache[resource_id]
-
-    resource = curve_resources_by_id[resource_id]
-    name = (resource.definition_name or resource_id) + " (lines)"
-    coll = bpy.data.collections.new(name)
-    obj = _build_curve_object(name, resource)
-    coll.objects.link(obj)
-    sources_collection.children.link(coll)
-    curve_collection_cache[resource_id] = coll
-    stats["unique_curve_meshes"] += 1
-    stats["curve_runs"] += len(resource.curves)
-    return coll
-
-
-def _place_node(
-    node,
-    parent_matrix,
-    resources_by_id,
-    collection_cache,
-    curve_resources_by_id,
-    curve_collection_cache,
-    layer_collection_cache,
-    root_collection,
-    sources_collection,
-    gltf_materials,
-    material_cache,
-    textures,
-    image_cache,
-    stats,
-):
-    """Walks one InstancedNode, placing an Empty (collection-instance) for
-    its own mesh_resource_id and/or curve_resource_id (a definition can
-    have both - faces AND loose edges at once) at the composed world
-    matrix, then recurses into children with that same world matrix as
-    their new parent matrix - matrices are relative-to-parent in openskp's
-    own model, composed here into world space for a flat, editable result
-    rather than mirroring the source's exact nesting as Blender parent/
-    child objects.
-
-    Each placement Empty is linked into a Collection for its OWN
-    node.layer (SketchUp's "tag"), not a single fixed target - a layer is
-    a property of the placement, not of the definition it references (the
-    same definition can appear on different layers in different places),
-    so grouping by layer only makes sense here, at the placement level."""
-    local_matrix = _gltf_matrix_to_blender(node.matrix)
-    world_matrix = parent_matrix @ local_matrix
-    sketchup_layer_coll = _get_or_build_layer_collection(node.layer, layer_collection_cache, root_collection)
-
-    if node.mesh_resource_id is not None:
-        coll = _get_or_build_collection(
-            node.mesh_resource_id, resources_by_id, collection_cache, sources_collection,
-            gltf_materials, material_cache, textures, image_cache, stats
-        )
-        empty = bpy.data.objects.new(node.name or node.mesh_resource_id, None)
-        empty.instance_type = "COLLECTION"
-        empty.instance_collection = coll
-        empty.matrix_world = _YUP_TO_ZUP @ world_matrix
-        sketchup_layer_coll.objects.link(empty)
-        stats["placements"] += 1
-
-    if node.curve_resource_id is not None:
-        curve_coll = _get_or_build_curve_collection(
-            node.curve_resource_id, curve_resources_by_id, curve_collection_cache, sources_collection, stats
-        )
-        curve_empty = bpy.data.objects.new(
-            (node.name or node.curve_resource_id) + " (lines)", None
-        )
-        curve_empty.instance_type = "COLLECTION"
-        curve_empty.instance_collection = curve_coll
-        curve_empty.matrix_world = _YUP_TO_ZUP @ world_matrix
-        sketchup_layer_coll.objects.link(curve_empty)
-        stats["curve_placements"] += 1
-
+def _place_node(node, parent_matrix, resources, mesh_cache, curve_resources,
+                curve_cache, layers, root, materials, material_cache,
+                textures, image_cache, stats):
+    world = parent_matrix @ _gltf_matrix_to_blender(node.matrix)
+    target = _get_or_build_layer_collection(node.layer, layers, root)
+    for resource_id, is_curve in ((node.mesh_resource_id, False), (node.curve_resource_id, True)):
+        if resource_id is None:
+            continue
+        name = node.name or resource_id
+        if is_curve:
+            name += " (lines)"
+            if resource_id not in curve_cache:
+                resource = curve_resources[resource_id]
+                obj = _build_curve_object(name, resource)
+                curve_cache[resource_id] = obj.data
+                stats["unique_curve_meshes"] += 1
+                stats["curve_runs"] += len(resource.curves)
+            else:
+                obj = bpy.data.objects.new(name, curve_cache[resource_id])
+            stats["curve_placements"] += 1
+        else:
+            obj = _get_mesh_object(resource_id, resources, mesh_cache, materials,
+                                   material_cache, textures, image_cache, stats, name=name)
+            stats["placements"] += 1
+        obj.matrix_world = _YUP_TO_ZUP @ world
+        obj["openskp_resource"] = resource_id
+        obj["openskp_layer"] = node.layer or "Layer0"
+        target.objects.link(obj)
     for child in node.children:
-        _place_node(
-            child,
-            world_matrix,
-            resources_by_id,
-            collection_cache,
-            curve_resources_by_id,
-            curve_collection_cache,
-            layer_collection_cache,
-            root_collection,
-            sources_collection,
-            gltf_materials,
-            material_cache,
-            textures,
-            image_cache,
-            stats,
-        )
+        _place_node(child, world, resources, mesh_cache, curve_resources, curve_cache,
+                    layers, root, materials, material_cache, textures, image_cache, stats)
 
 
-def _find_layer_collection(layer_collection, target_collection):
-    """Finds the LayerCollection wrapping target_collection, searching
-    from layer_collection downward - needed to set .exclude on a
-    just-linked Collection, since that flag lives on the View Layer's own
-    parallel LayerCollection tree, not on the Collection datablock itself."""
-    if layer_collection.collection == target_collection:
-        return layer_collection
-    for child in layer_collection.children:
-        found = _find_layer_collection(child, target_collection)
-        if found is not None:
-            return found
-    return None
+def _placed_layers(node):
+    layers = {node.layer or "Layer0"}
+    for child in node.children:
+        layers.update(_placed_layers(child))
+    return layers
 
 
 def import_skp(filepath, context=None):
@@ -567,34 +357,17 @@ def import_skp(filepath, context=None):
     root_collection = bpy.data.collections.new(root_name)
     context.scene.collection.children.link(root_collection)
 
-    # Every unique definition's master mesh/curve object lives in its own
-    # Collection here, not directly in the viewport - each is linked as a
-    # child of THIS collection, which is then excluded from the View
-    # Layer (see _find_layer_collection below): kept out of the
-    # viewport/render at its local-space origin (where it would otherwise
-    # show up duplicated alongside the real, placed instances), while
-    # staying visible and selectable in the Outliner - the standard
-    # Blender pattern for a source/library collection feeding instances.
-    sources_collection = bpy.data.collections.new(f"{root_name} (source geometry)")
-    root_collection.children.link(sources_collection)
+    # A single tag needs only the import collection. Multiple tags get
+    # one child collection each so their visibility remains independent.
+    source_layers = _placed_layers(scene.scene_hierarchy)
+    if len(source_layers) == 1:
+        layer_collection_cache[next(iter(source_layers))] = root_collection
 
     t0 = time.time()
-    _place_node(
-        scene.scene_hierarchy,
-        mathutils.Matrix.Identity(4),
-        resources_by_id,
-        collection_cache,
-        curve_resources_by_id,
-        curve_collection_cache,
-        layer_collection_cache,
-        root_collection,
-        sources_collection,
-        gltf_materials,
-        material_cache,
-        textures,
-        image_cache,
-        stats,
-    )
+    _place_node(scene.scene_hierarchy, mathutils.Matrix.Identity(4),
+                resources_by_id, collection_cache, curve_resources_by_id,
+                curve_collection_cache, layer_collection_cache, root_collection,
+                gltf_materials, material_cache, textures, image_cache, stats)
     stats["textures_loaded"] = sum(isinstance(key, int) for key in image_cache)
     stats["texture_tint_variants"] = sum(isinstance(key, tuple) for key in image_cache)
     print(
@@ -621,10 +394,22 @@ def import_skp(filepath, context=None):
             coll.hide_render = True
             stats["hidden_layers"] += 1
 
-    layer_coll = _find_layer_collection(context.view_layer.layer_collection, sources_collection)
-    if layer_coll is not None:
-        layer_coll.exclude = True
-
+    context.view_layer.update()
+    meshes = [obj for obj in root_collection.all_objects if obj.type == 'MESH' and len(obj.data.polygons)]
+    if meshes:
+        # Make the geometry and its first textured material available immediately
+        # to Edit Mode, Material Properties and the Shader Editor.
+        active = max(meshes, key=lambda obj: len(obj.data.polygons))
+        for obj in context.selected_objects:
+            obj.select_set(False)
+        active.select_set(True)
+        context.view_layer.objects.active = active
+        for index, material in enumerate(active.data.materials):
+            if material and material.use_nodes and any(node.type == 'TEX_IMAGE' for node in material.node_tree.nodes):
+                active.active_material_index = index
+                break
+    stats["mesh_objects"] = len(root_collection.all_objects)
+    stats["collections"] = 1 + len(root_collection.children)
     return stats
 
 

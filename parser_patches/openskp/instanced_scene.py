@@ -443,6 +443,9 @@ def build_instanced_scene(
                 indices[i * 3 + 1] = tri[1]
                 indices[i * 3 + 2] = tri[2]
 
+            material_index = get_material_index(color, double_sided, tex_index, transparency)
+            if group.get("material_name"):
+                gltf_materials[material_index].setdefault("name", group["material_name"])
             primitives.append(
                 LocalPrimitive(
                     positions=positions,

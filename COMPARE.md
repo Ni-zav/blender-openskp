@@ -1,48 +1,61 @@
-# OpenSKP Compare for NEOS
+﻿# OpenSKP Compare for NEOS
 
 Local legacy build for Blender 4.2 on Windows x64 (Python 3.11).
 Based on Ahsan Mehmood's GPL-3.0-or-later blender-openskp.
 Dependency licenses are preserved under vendor/*.dist-info and vendor/*.libs.
 
 Install the ZIP through Preferences > Add-ons > Install from Disk and enable
-OpenSKP Compare for NEOS. It can be enabled alongside NEOS.
+OpenSKP Compare for NEOS. Use File > Import > SketchUp - OpenSKP Compare (.skp),
+including while NEOS mode is active. The NEOS SKP import control uses its own
+separate SDK engine for comparison.
 
-Use File > Import > SketchUp - OpenSKP Compare (.skp).
-Show imported textures is enabled by default: Solid viewports switch to flat
-texture color. Material Preview and Rendered shading are preserved. Image
-nodes are active for Blender Workbench and NEOS Albedo; images remain packed
-in the blend file. Turn off the checkbox to preserve Solid viewport settings.
-To use OpenSKP inside NEOS mode, choose the same OpenSKP Compare menu.
-The NEOS SKP import control selects the separate NEOS engine for comparison. Use a fresh scene for each
-import with the same unit scale, file and viewpoint; do not overlay results.
-This build uses OpenSKP with documented legacy parser fixes and keeps its
-collection-instancing approach.
-It does not convert the imported content into NEOS canonical modelling data.
+## Editable geometry in 0.2.10
 
-OpenSKP keeps shared master meshes under <filename> (source geometry).
-Visible placements are collection-instance Empties. Enable that source
-collection in the Outliner and select its mesh to edit shared geometry.
+Every visible placement is a real Mesh object. Select it and press Tab to edit.
+There are no collection-instance Empties or hidden source-geometry collections.
+A single-tag file uses one import collection; multiple tags get child collections
+with their original visibility. Bld D.skp uses one collection and 280 Mesh objects
+(257 face placements plus 23 loose-edge placements).
 
-Import time and counts appear in the system console and in the Scene custom
-property openskp_compare_last_import. Unique mesh counts and NEOS projected
-object counts represent different structures; compare visible geometry,
-placement, scale, hidden tags, materials, textures and editability as well.
+Repeated components share mesh data, preserving SketchUp-style shared editing.
+Use Object > Relations > Make Single User > Object & Data to edit one copy alone.
+Object transforms stay independent. Source component/paint variants keep their
+own mesh and per-face material slots.
 
-Export remains upstream OpenSKP export: select real mesh objects. Placement
-Empties are not exported; original hierarchy and texture export are limited.
+## Editable materials
 
-All changes are local. Nothing has been published to the upstream repository.
+Textured paints have UV Texture Coordinate > Mapping > Image Texture > OpenSKP
+Material Adjustment > Principled BSDF > Material Output. The adjustment group
+exposes Tint, Hue, Saturation, Brightness, Roughness, Metallic and Alpha.
+An optional grayscale-to-Bump branch starts with Strength 0: SketchUp has not
+provided an actual PBR height/normal map. Texture alpha multiplies source opacity.
+Materials retain recovered source names; packed paint images remain active for
+Solid texture view. The shader is self-contained and needs no NEOS asset pack.
 
-## Previous 0.2.7 validation on Blender 4.2.7
+Use Material Preview or Rendered view to see shader/Mapping adjustments; Solid
+TEXTURE displays the active image and does not evaluate the complete shader tree.
+Show imported textures (on by default) sets Solid viewports to flat TEXTURE with
+backface culling. Material Preview and Rendered viewport choices are preserved.
+Imported paint tint, front/back sides, UVs and world placements from 0.2.9 remain.
+This is not a claim of pixel-identical rendering or reconstruction of SketchUp
+renderer-specific PBR materials. No NEOS custom shader groups are copied.
 
-- Actual legacy installation and simultaneous registration with NEOS passed.
-- Bld D.skp imported: 63 unique meshes, 257 mesh placements, 71,453 unique
-  triangles, 13 loose-edge resources, 23 wire placements and 7 textures.
-- All nine files in dxfdwgskp_sample have passing OpenSKP import evidence.
-- Legacy parser fixes cover custom line styles, custom-layer bootstrap,
-  old Image records without GUIDs, and full image placement matrices.
-- These are import checks in background Blender, not visual fidelity approval.
+## Comparison and scope
 
-Version 0.2.9 bakes the source paint tint into packed image variants for matching shader and Workbench display, preserves inherited group/component textures and separates front/back paint without the unpainted side covering the textured side. Solid texture view enables backface culling for those paired faces.
+Import counts/timing appear in the console and Scene.openskp_compare_last_import.
+Use fresh scenes and identical units, source files and camera positions.
+The importer uses OpenSKP 1.3.0 plus documented independent legacy parser fixes.
+It does not adopt geometry into NEOS canonical modeling records.
 
-Shared paint on both sides is represented explicitly for Solid backface culling.
+Focused 0.2.10 acceptance uses Bld D.skp in Blender 4.2.7 outside/inside NEOS mode:
+real Edit Mode, component sharing, source material names, shader controls, neutral
+bump defaults, alpha links and the previous world bounds/triangle count.
+Shader brightness is exercised through a small Cycles render.
+Older all-sample evidence belongs to earlier builds; it does not validate 0.2.10
+on every SKP. No raw validation reports or screenshots ship in the ZIP.
+
+Export consumes selected real mesh objects, so imported geometry can now be
+selected directly for export. The existing export still has limitations in
+material/texture fidelity and hierarchy reconstruction.
+
+All changes are local. Nothing is published to upstream or deployed.
