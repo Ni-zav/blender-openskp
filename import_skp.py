@@ -84,16 +84,15 @@ def _get_or_build_texture_image(texture_index, textures, image_cache):
     return image
 
 
-def _tinted_texture(image, color, image_cache):
-    """Bake the glTF color factor so Workbench and shader previews agree."""
-    if all(abs(value - 1.0) < 1e-6 for value in color):
-        return image
-    key = (image.as_pointer(), tuple(color))
+def _tinted_texture(image, color, image_cache, colorize_type=0):
+    """Bake SketchUp HLS Shift/Tint for both shader and Workbench previews."""
+    key = (image.as_pointer(), tuple(color), colorize_type)
     if key not in image_cache:
         import numpy as np
         pixels = np.empty(len(image.pixels), dtype=np.float32)
         image.pixels.foreach_get(pixels)
-        pixels.reshape((-1, 4))[:, :3] *= np.asarray(color, dtype=np.float32)
+        from .paint_color import colorize_pixels
+        pixels = colorize_pixels(pixels, color, colorize_type)
         tinted = image.copy()
         tinted.name = image.name + " (paint tint)"
         tinted.pixels.foreach_set(pixels)
@@ -128,96 +127,99 @@ def _get_or_build_material(material_index, gltf_materials, material_cache, textu
 
     mat = bpy.data.materials.new(name=gltf_mat.get("name") or f"OpenSKP Material {material_index + 1}")
     mat.use_nodes = True
-    mat.diffuse_color = (r, g, b, a)  # Solid viewport shading / thumbnails
+    from .paint_color import srgb_to_linear
+    linear_color = (*srgb_to_linear((r,g,b)), a)
+    mat.diffuse_color = linear_color  # Solid viewport shading / thumbnails
     if a < 1.0:
         mat.surface_render_method = "DITHERED"
 
     image = None
     if texture_ref is not None:
         image = _get_or_build_texture_image(texture_ref.get("index"), textures, image_cache)
-        if image is not None:
-            image = _tinted_texture(image, (r, g, b), image_cache)
+        paint = gltf_mat.get("openskp_paint", {})
+        if image is not None and paint.get("colorized", False):
+            image = _tinted_texture(image, (r, g, b), image_cache, paint.get("colorize_type", 0))
     from .material_nodes import build_material_nodes
-    build_material_nodes(mat, image=image, color=(r, g, b, a),
+    build_material_nodes(mat, image=image, color=linear_color,
                          roughness=pbr.get("roughnessFactor", .8),
                          metallic=pbr.get("metallicFactor", 0.0))
-    mat.use_backface_culling = True
+    mat.use_backface_culling = not gltf_mat.get("doubleSided",False)
 
     material_cache[material_index] = mat
     return mat
 
 
 def _build_mesh_object(name, resource, gltf_materials, material_cache, textures, image_cache):
-    """Builds one Mesh Object (local space, at the origin) from an
-    InstancedMeshResource's primitives - already-triangulated, so this is
-    a direct from_pydata() with no triangulation of its own to do.
-
-    Each primitive is already grouped by a single resolved material (see
-    openskp.instanced_scene.mesh_resource_for's own docstring) - its
-    material_index is used both to pick/build the right Blender Material
-    and to set each of its triangles' own polygon.material_index, so the
-    mesh's material slots and per-face assignment match the source file's
-    own per-face paint, not just one flat color for the whole object.
-    """
-    verts = []
-    vert_uvs = []
-    tris = []
-    tri_material_indices = []
-    slot_by_material_index = {}
-    mesh_materials = []
-
+    """Keep one editable polygon for each coincident front/back triangle pair."""
+    verts, uv_by_vertex, faces = [], [], []
+    unmatched = {}
     for prim in resource.primitives:
-        if prim.material_index not in slot_by_material_index:
-            slot_by_material_index[prim.material_index] = len(mesh_materials)
-            mesh_materials.append(
-                _get_or_build_material(prim.material_index, gltf_materials, material_cache, textures, image_cache)
-            )
-        slot = slot_by_material_index[prim.material_index]
-
         base = len(verts)
-        pos = prim.positions
-        uvs = prim.uvs
-        for i in range(0, len(pos), 3):
-            verts.append((pos[i], pos[i + 1], pos[i + 2]))
-        vertex_count = len(pos) // 3
-        if len(uvs) not in (0, vertex_count * 2):
-            raise ValueError(f"Invalid UV count for {name}: {len(uvs)} values for {vertex_count} vertices")
-        if len(uvs):
-            vert_uvs.extend((uvs[i], uvs[i + 1]) for i in range(0, len(uvs), 2))
-        else:
-            # Untextured primitives still occupy vertices in this shared mesh.
-            # Omitting their UVs shifts every subsequent textured primitive.
-            vert_uvs.extend([(0.0, 0.0)] * vertex_count)
-        idx = prim.indices
-        tri_count = len(idx) // 3
-        for i in range(tri_count):
-            tris.append((base + idx[i * 3], base + idx[i * 3 + 1], base + idx[i * 3 + 2]))
-            tri_material_indices.append(slot)
-            if gltf_materials[prim.material_index].get("doubleSided"):
-                # Workbench culls globally, so represent a shared paint on both
-                # sides explicitly as well as the parser's distinct side pairs.
-                tris.append((base + idx[i * 3], base + idx[i * 3 + 2], base + idx[i * 3 + 1]))
-                tri_material_indices.append(slot)
-
+        pos, uvs = prim.positions, prim.uvs
+        count = len(pos)//3
+        if len(uvs) not in (0,count*2):
+            raise ValueError(f"Invalid UV count for {name}")
+        local_verts = [tuple(pos[i:i+3]) for i in range(0,len(pos),3)]
+        verts.extend(local_verts)
+        uv_by_vertex.extend([tuple(uvs[i:i+2]) for i in range(0,len(uvs),2)] if len(uvs) else [(0.,0.)]*count)
+        for i in range(0,len(prim.indices),3):
+            indices = tuple(base+j for j in prim.indices[i:i+3])
+            points = tuple(verts[j] for j in indices)
+            key = tuple(sorted(points))
+            normal = (mathutils.Vector(points[1])-mathutils.Vector(points[0])).cross(mathutils.Vector(points[2])-mathutils.Vector(points[0]))
+            flags = getattr(prim,"front_sides",None)
+            is_front = flags[i//3] if flags is not None else True
+            candidates = unmatched.get(key, [])
+            opposite = next((f for f in candidates if f['normal'].dot(normal) < 0), None)
+            if opposite is not None:
+                if is_front and not opposite['is_front']:
+                    # Preserve SketchUp's actual front paint as the primary
+                    # slot/image for Solid and NEOS Albedo as well as shaders.
+                    back_uv = {verts[j]:uv_by_vertex[j] for j in opposite['indices']}
+                    back_material = opposite['material']
+                    opposite.update(indices=indices, material=prim.material_index, normal=normal, is_front=True)
+                else:
+                    back_uv = {verts[j]:uv_by_vertex[j] for j in indices}
+                    back_material = prim.material_index
+                opposite['back_uv'] = tuple(back_uv[verts[j]] for j in opposite['indices'])
+                opposite['back_material'] = back_material
+                candidates.remove(opposite)
+            else:
+                face = dict(indices=indices, material=prim.material_index, normal=normal,
+                            back_material=None, back_uv=None, is_front=is_front)
+                faces.append(face); unmatched.setdefault(key, []).append(face)
     mesh = bpy.data.meshes.new(name)
-    mesh.from_pydata(verts, [], tris)
-    for mat in mesh_materials:
-        mesh.materials.append(mat)
-    for poly, slot in zip(mesh.polygons, tri_material_indices):
-        poly.material_index = slot
-
-    # UVs are per-LOOP (face-corner) in Blender, not per-vertex - each
-    # loop's own vertex_index looks back up into vert_uvs (built parallel
-    # to verts above, in the same per-primitive order) to find its UV.
-    if vert_uvs:
-        uv_layer = mesh.uv_layers.new(name="UVMap")
-        uv_layer.active_render = True
-        for loop in mesh.loops:
-            uv_layer.data[loop.index].uv = vert_uvs[loop.vertex_index]
-
+    used = sorted({index for face in faces for index in face['indices']})
+    remap = {old:new for new,old in enumerate(used)}
+    mesh.from_pydata([verts[i] for i in used], [], [[remap[i] for i in face['indices']] for face in faces])
+    slots = {}; back_needed = any(face['back_material'] is not None for face in faces)
+    front_layer = mesh.uv_layers.new(name='UVMap')
+    back_layer = mesh.uv_layers.new(name='UVMap_Back') if back_needed else None
+    from .material_nodes import build_two_sided_material
+    for polygon, face in zip(mesh.polygons, faces):
+        front_id, back_id = face['material'], face['back_material']
+        key = (front_id,back_id)
+        if key not in slots:
+            front = _get_or_build_material(front_id,gltf_materials,material_cache,textures,image_cache)
+            if back_id is not None:
+                pair_key = ('sides',front_id,back_id)
+                if pair_key not in material_cache:
+                    back = _get_or_build_material(back_id,gltf_materials,material_cache,textures,image_cache)
+                    material_cache[pair_key] = build_two_sided_material(front,back)
+                material = material_cache[pair_key]
+            else:
+                material = front
+            slots[key] = len(mesh.materials); mesh.materials.append(material)
+        polygon.material_index = slots[key]
+        for corner,loop in enumerate(polygon.loop_indices):
+            uv = uv_by_vertex[face['indices'][corner]]
+            front_layer.data[loop].uv = uv
+            if back_layer is not None:
+                back_layer.data[loop].uv = face['back_uv'][corner] if face['back_uv'] is not None else uv
+    mesh.uv_layers.active_index = 0
+    front_layer.active_render = True
     mesh.update()
-    obj = bpy.data.objects.new(name, mesh)
-    return obj
+    return bpy.data.objects.new(name,mesh)
 
 
 def _get_or_build_layer_collection(layer_name, layer_collection_cache, root_collection):
@@ -431,5 +433,5 @@ def show_imported_textures(context):
             if shading.type == 'SOLID':
                 shading.color_type = 'TEXTURE'
                 shading.light = 'FLAT'
-                shading.show_backface_culling = True
+                shading.show_backface_culling = False
             area.tag_redraw()

@@ -836,7 +836,7 @@ def _texture_block(ar, r):
     return {'rgba': tuple(avg[:4]), 'opacity': opacity, 'use_opacity': use_op,
             'tex_dib': s, 'tex_data': dib['data'] if s is None else None,
             'tex_w': w, 'tex_h': h, 'tex_file': fname,
-            'colorized': colorized}
+            'colorized': colorized, 'colorize_type': int.from_bytes(blob[4:], 'little')}
 
 
 def _read_material(ar, r):
@@ -2100,9 +2100,8 @@ def full_parse_legacy(skp_path: str) -> Dict[str, Any]:
             'name': v['name'],
             'color': {'r': rgba[0], 'g': rgba[1], 'b': rgba[2], 'a': rgba[3]},
             'transparency': trans,
-            # colourize type is not decoded in the legacy record; tint is
-            # the correct rendering for the grey base textures observed
-            'colorized': colorized, 'colorize_type': 1 if colorized else 0,
+            # The second texture-mode word distinguishes HLS Shift from Tint.
+            'colorized': colorized, 'colorize_type': v.get('colorize_type', 0),
         }
         if 'tex_dib' in v:
             dib = slots.get(v['tex_dib']) if v['tex_dib'] is not None else None

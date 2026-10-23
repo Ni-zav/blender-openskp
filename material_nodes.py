@@ -94,3 +94,65 @@ def build_material_nodes(material, *, image, color, roughness=.8, metallic=0.):
     for node in nodes:
         node.select = False
     nodes.active.select = True
+
+
+def _copy_surface(source, material, *, uv_map, y_offset):
+    """Copy an imported side's editable graph, routing its own UV layer."""
+    source_nodes = source.node_tree.nodes
+    nodes, links = material.node_tree.nodes, material.node_tree.links
+    copied = {}
+    for original in source_nodes:
+        if original.type == 'OUTPUT_MATERIAL':
+            continue
+        node = nodes.new(original.bl_idname)
+        for attribute in ('node_tree', 'image', 'operation', 'blend_type', 'vector_type',
+                          'interpolation', 'projection', 'extension', 'invert'):
+            if hasattr(original, attribute):
+                setattr(node, attribute, getattr(original, attribute))
+        node.location = (original.location.x, original.location.y+y_offset)
+        node.width, node.label = original.width, original.label
+        for dst, src in zip(node.inputs, original.inputs):
+            if hasattr(dst, 'default_value') and hasattr(src, 'default_value'):
+                dst.default_value = src.default_value
+        copied[original] = node
+    for link in source.node_tree.links:
+        if link.from_node in copied and link.to_node in copied:
+            from_index = list(link.from_node.outputs).index(link.from_socket)
+            to_index = list(link.to_node.inputs).index(link.to_socket)
+            links.new(copied[link.from_node].outputs[from_index], copied[link.to_node].inputs[to_index])
+    # Keep Mapping editable but give the back side its own per-corner UVs.
+    for node in list(copied.values()):
+        if node.type == 'TEX_COORD':
+            for link in list(node.outputs['UV'].links):
+                uv = nodes.new('ShaderNodeUVMap'); uv.uv_map = uv_map
+                uv.location = node.location; uv.width = node.width
+                links.new(uv.outputs['UV'], link.to_socket)
+            nodes.remove(node)
+    output = next(node for node in source_nodes if node.type == 'OUTPUT_MATERIAL')
+    return copied[output.inputs['Surface'].links[0].from_node]
+
+
+def build_two_sided_material(front, back):
+    """One physical face; its two paints no longer compete in the depth buffer."""
+    material = bpy.data.materials.new(front.name + ' | ' + back.name)
+    material.use_nodes = True
+    material.diffuse_color = front.diffuse_color
+    material.use_backface_culling = False
+    material.surface_render_method = 'DITHERED'
+    material.node_tree.nodes.clear()
+    front_shader = _copy_surface(front, material, uv_map='UVMap', y_offset=450)
+    back_shader = _copy_surface(back, material, uv_map='UVMap_Back', y_offset=-650)
+    nodes, links = material.node_tree.nodes, material.node_tree.links
+    geometry = nodes.new('ShaderNodeNewGeometry'); geometry.location = (500,650)
+    mix = nodes.new('ShaderNodeMixShader'); mix.location = (760,100); mix.label = 'Front / Back paint'
+    output = nodes.new('ShaderNodeOutputMaterial'); output.location = (1000,100)
+    links.new(geometry.outputs['Backfacing'],mix.inputs[0])
+    links.new(front_shader.outputs['BSDF'],mix.inputs[1]); links.new(back_shader.outputs['BSDF'],mix.inputs[2])
+    links.new(mix.outputs[0],output.inputs['Surface'])
+    # Workbench can display one active image only; use the stored front paint.
+    image = next((n for n in nodes if n.type == 'TEX_IMAGE' and n.location.y > -300),None)
+    nodes.active = image or front_shader
+    for node in nodes:
+        node.select = False
+    nodes.active.select = True
+    return material

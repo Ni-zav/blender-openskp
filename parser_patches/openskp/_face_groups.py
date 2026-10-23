@@ -198,6 +198,8 @@ def _add_face_side(
     if group is None:
         group = {
             "material_name": mat.get("name") if mat else None,
+            "material_colorized": bool(mat and mat.get("colorized")),
+            "material_colorize_type": mat.get("colorize_type", 0) if mat else 0,
             "color": color,
             "transparency": transparency,
             "double_sided": double_sided,
@@ -206,6 +208,7 @@ def _add_face_side(
             "local_uvs": [],
             "normals_accum": [],
             "local_faces": [],
+            "front_sides": [],
             "local_v_map": {},
         }
         face_groups[key] = group
@@ -224,6 +227,13 @@ def _add_face_side(
     face_local_map: Dict[int, int] = {}
     for tri in triangles:
         tri_ids = list(tri)
+        # Triangle/quad fast paths preserve loop winding; ensure it actually
+        # matches the stored front normal before assigning front/back paint.
+        a, b, c = (builder.vertices[index] for index in tri_ids)
+        ab = tuple(b[i]-a[i] for i in range(3)); ac = tuple(c[i]-a[i] for i in range(3))
+        cross = (ab[1]*ac[2]-ab[2]*ac[1], ab[2]*ac[0]-ab[0]*ac[2], ab[0]*ac[1]-ab[1]*ac[0])
+        if sum(cross[i]*fn[i] for i in range(3)) < 0:
+            tri_ids[1], tri_ids[2] = tri_ids[2], tri_ids[1]
         if reverse:
             tri_ids[1], tri_ids[2] = tri_ids[2], tri_ids[1]
         face_indices = []
@@ -251,6 +261,7 @@ def _add_face_side(
             face_indices.append(idx)
         if len(face_indices) == 3:
             group["local_faces"].append(face_indices)
+            group["front_sides"].append(not reverse)
 
 
 def build_local_face_groups(builder: Any, ctx: FaceGroupContext) -> Dict[FaceGroupKey, Dict[str, Any]]:

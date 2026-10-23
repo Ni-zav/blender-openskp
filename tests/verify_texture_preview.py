@@ -18,7 +18,7 @@ parser.add_argument('--output', type=Path, default=ROOT / 'texture-validation')
 args = parser.parse_args(sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else [])
 OUTPUT = args.output.resolve()
 OUTPUT.mkdir(parents=True, exist_ok=True)
-bpy.ops.preferences.addon_install(filepath=str(ROOT / 'openskp-neos-compare-0.2.10-blender42-win64-legacy.zip'))
+bpy.ops.preferences.addon_install(filepath=str(ROOT / 'openskp-neos-compare-0.2.11-blender42-win64-legacy.zip'))
 addon_utils.modules_refresh()
 assert addon_utils.enable('openskp_neos_compare', default_set=False) is not None
 importer = importlib.import_module('openskp_neos_compare.import_skp')
@@ -100,11 +100,11 @@ def check_import(label):
         if not images:
             continue
         node = images[0]
-        assert nodes.active == node and node.image.packed_file
+        assert nodes.active.type in {'TEX_IMAGE','BSDF_PRINCIPLED'} and node.image.packed_file
         assert all(size > 0 for size in node.image.size)
         assert node.inputs['Vector'].is_linked
         assert node.inputs['Vector'].links[0].from_node.type == 'MAPPING'
-        assert node.inputs['Vector'].links[0].from_node.inputs['Vector'].links[0].from_node.type == 'TEX_COORD'
+        assert node.inputs['Vector'].links[0].from_node.inputs['Vector'].links[0].from_node.type in {'TEX_COORD','UVMAP'}
         count += 1
     if args.input.name == 'Bld D.skp':
         assert stats['textures_loaded'] >= 9 and count >= 17

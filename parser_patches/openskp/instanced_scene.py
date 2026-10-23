@@ -21,6 +21,7 @@ world-space copies.
 from __future__ import annotations
 
 import logging
+import hashlib
 import re
 import time
 from array import array
@@ -78,6 +79,7 @@ class LocalPrimitive:
     uvs: array
     indices: array
     material_index: int
+    front_sides: Optional[List[bool]] = None
 
 
 @dataclass
@@ -306,7 +308,7 @@ def build_instanced_scene(
         mime_type = _sniff_image_mime(data)
         if mime_type is None:
             return None  # a format glTF cannot carry
-        key = f"{len(data)}:{data[:16].hex()}"
+        key = hashlib.sha256(data).hexdigest()
         hit = texture_index_by_key.get(key)
         if hit is not None:
             return hit
@@ -446,13 +448,17 @@ def build_instanced_scene(
             material_index = get_material_index(color, double_sided, tex_index, transparency)
             if group.get("material_name"):
                 gltf_materials[material_index].setdefault("name", group["material_name"])
+            gltf_materials[material_index]["openskp_paint"] = dict(
+                colorized=group["material_colorized"], colorize_type=group["material_colorize_type"])
+
             primitives.append(
                 LocalPrimitive(
                     positions=positions,
                     normals=normals,
                     uvs=uvs,
                     indices=indices,
-                    material_index=get_material_index(color, double_sided, tex_index, transparency),
+                    material_index=material_index,
+                    front_sides=group["front_sides"],
                 )
             )
 

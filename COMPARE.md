@@ -35,8 +35,8 @@ Solid texture view. The shader is self-contained and needs no NEOS asset pack.
 Use Material Preview or Rendered view to see shader/Mapping adjustments; Solid
 TEXTURE displays the active image and does not evaluate the complete shader tree.
 Show imported textures (on by default) sets Solid viewports to flat TEXTURE with
-backface culling. Material Preview and Rendered viewport choices are preserved.
-Imported paint tint, front/back sides, UVs and world placements from 0.2.9 remain.
+two-sided visibility. Material Preview and Rendered viewport choices are preserved.
+World placements and editable Mesh objects remain; see 0.2.11 paint changes below.
 This is not a claim of pixel-identical rendering or reconstruction of SketchUp
 renderer-specific PBR materials. No NEOS custom shader groups are copied.
 
@@ -59,3 +59,27 @@ selected directly for export. The existing export still has limitations in
 material/texture fidelity and hierarchy reconstruction.
 
 All changes are local. Nothing is published to upstream or deployed.
+
+## Material fidelity in 0.2.11
+
+Paint colorization now uses SketchUp HLS Shift/Tint rather than multiplying
+average RGB into the texture. The legacy texture mode is decoded, uncolorized
+images remain unchanged, solid paint is converted from sRGB for Blender shader
+inputs, and image deduplication hashes all bytes.
+
+Reference: https://github.com/SketchUp/sketchup-colorize-algorithm
+The numerical implementation is independent; the SketchUp SDK is used only as
+an optional test reference, never as an OpenSKP runtime dependency.
+
+Coincident front/back paint triangles become one editable surface with a
+Backfacing shader switch and distinct UVMap / UVMap_Back layers. SketchUp's front
+paint remains the primary material preview. Triangle winding follows the source
+normal; source/back duplicate polygons and their orphan vertices are removed.
+Solid shows the front image; use Material Preview/Rendered for differing back
+paint. Solid backface culling is disabled to show these two-sided surfaces.
+
+Focused acceptance compares all 12 textured Bld D paints against fresh SDK
+texture exports, verifies Edit Mode and unchanged world bounds, checks two-sided
+UVs, exercises shader brightness, and imports outside/inside NEOS mode. This
+improves the sampled file; it does not promise pixel-identical results under
+other lighting/color management or validate all sample files.

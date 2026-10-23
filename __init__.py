@@ -13,7 +13,7 @@ from bpy_extras.io_utils import ExportHelper, ImportHelper
 bl_info = {
     "name": "OpenSKP Compare for NEOS",
     "author": "Ahsan Mehmood; local NEOS compatibility build",
-    "version": (0, 2, 10),
+    "version": (0, 2, 11),
     "blender": (4, 2, 0),
     "location": "File > Import/Export > SketchUp - OpenSKP Compare",
     "description": "Independent OpenSKP parser for comparison with NEOS SKP",
