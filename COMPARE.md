@@ -1,4 +1,4 @@
-ï»¿# OpenSKP Compare for NEOS
+ÃƒÂ¯Ã‚Â»Ã‚Â¿# OpenSKP Compare for NEOS
 
 Local legacy build for Blender 4.2 on Windows x64 (Python 3.11).
 Based on Ahsan Mehmood's GPL-3.0-or-later blender-openskp.
@@ -84,7 +84,7 @@ UVs, exercises shader brightness, and imports outside/inside NEOS mode. This
 improves the sampled file; it does not promise pixel-identical results under
 other lighting/color management or validate all sample files.
 
-## Saved scene cameras in 0.2.12
+## Saved scene cameras in 0.2.13
 
 Import Scenes As Cameras creates named Blender camera objects from captured
 SketchUp page views, selects the first imported camera as the scene camera,
@@ -102,3 +102,10 @@ uses the default vertical FOV / 16:9 when the parser has no aspect metadata;
 guaranteed. SDK comparison is a development test oracle, not a runtime fallback.
 Camera-only acceptance checks 19 classic Cam81 views, zero tower views and nine
 modern FINALMASJID views against SDK names, matrices and camera settings.
+
+Automatic/missing clipping uses Blender's 0.1m near / 1000m far defaults.
+The observed classic 1/1000-inch pair is treated as a default in this build:
+it blanked FINALMASJID Scene 1 despite the camera pose/FOV matching the SDK.
+Nondefault explicit classic clipping values retain inch-to-metre conversion.
+Camera acceptance therefore compares pose/projection with the SDK while testing
+clipping separately; this deliberately differs from NEOS 0.4.12's default far clip.

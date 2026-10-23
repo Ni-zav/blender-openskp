@@ -86,8 +86,14 @@ def import_cameras(filepath, parsed, context, root):
             collection=bpy.data.collections.new('SketchUp Scene Cameras');root.children.link(collection)
         data=bpy.data.cameras.new(name+'_Camera');obj=bpy.data.objects.new(name+'_Camera',data);collection.objects.link(obj)
         obj.matrix_world=matrix;data.sensor_width=36;data.sensor_height=max(36/aspect,1)
-        data.clip_start=max(float(page.get('clip',(1,1000))[0])*.0254,1e-6)
-        data.clip_end=max(float(page.get('clip',(1,1000))[1])*.0254,data.clip_start+1e-6)
+        clipping=page.get('clip')
+        # Treat the observed legacy 1/1000 pair as a default, not a useful
+        # 25.4m far plane: the tested saved view has geometry beyond it.
+        if clipping is None or tuple(clipping)==(1.,1000.):
+            data.clip_start=.1;data.clip_end=1000.
+        else:
+            data.clip_start=max(float(clipping[0])*.0254,1e-6)
+            data.clip_end=max(float(clipping[1])*.0254,data.clip_start+1e-6)
         if page.get('parallel'):
             data.type='ORTHO';data.sensor_fit='AUTO';data.ortho_scale=max(1,aspect)*max(float(page.get('ortho_height',1)),1e-6)*.0254
         else:
@@ -98,4 +104,3 @@ def import_cameras(filepath, parsed, context, root):
         created.append(obj)
     if created: context.scene.camera=created[0]
     return len(created)
-

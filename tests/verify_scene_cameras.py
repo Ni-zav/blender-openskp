@@ -24,10 +24,11 @@ for name,expected in [('Cam81.skp',19),('bld tower Bentuk I.skp',0),('FINALMASJI
    assert obj['openskp_scene_name']==scene.name()
    assert np.allclose(np.asarray(obj.matrix_world),np.asarray(wanted),atol=1e-5),(name,scene.name())
    settings=sketchup_camera_settings(camera)
-   for key in ('type','sensor_fit','lens','ortho_scale','clip_start','clip_end'):
+   for key in ('type','sensor_fit','lens','ortho_scale'):
     if key not in settings:continue
     value=getattr(obj.data,key);expected_value=settings[key]
     assert value==expected_value if isinstance(value,str) else abs(value-expected_value)<1e-4,(scene.name(),key,value,expected_value)
+   assert obj.data.clip_start==np.float32(.1) and obj.data.clip_end==1000
  print('CAMERA_SDK_PARITY_PASS',name,len(cameras),flush=True)
 # Perspective/orthographic conversion has independent known inputs too.
 from openskp_camera_test.scene_cameras import import_cameras
@@ -37,6 +38,11 @@ module=sys.modules['openskp_camera_test.scene_cameras'];original=module.pages_fr
 module.pages_from_file=lambda *_:[dict(name='Plan',eye=(0,0,100),target=(0,0,0),up=(0,1,0),parallel=True,ortho_height=100)]
 assert import_cameras('probe',{},bpy.context,bpy.context.scene.collection)==1
 assert abs(bpy.context.scene.camera.data.ortho_scale-100*16/9*.0254)<1e-5
+module.pages_from_file=original
+module.pages_from_file=lambda *_:[dict(name='Explicit clip',eye=(0,0,100),target=(0,0,0),up=(0,1,0),clip=(2,5000))]
+assert import_cameras('probe',{},bpy.context,bpy.context.scene.collection)==1
+assert abs(bpy.context.scene.camera.data.clip_start-.0508)<1e-6
+assert abs(bpy.context.scene.camera.data.clip_end-127)<1e-5
 module.pages_from_file=original
 addon.unregister()
 print('SCENE_CAMERA_ACCEPTANCE_PASS',flush=True)
